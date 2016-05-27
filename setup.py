@@ -25,8 +25,9 @@ def requirements(requirements_file='requirements.txt'):
 
 setup(
     name='opsview',
-    version='0.8.2',
+    version='0.8.3',
     description='Opsview REST API client',
+    license='GPLv3',
     long_description=read('README.md'),
     author='Philipp Schmitt',
     author_email='philipp@schmitt.co',
@@ -34,5 +35,8 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=requirements(),
-    keywords=['opsview', 'monitoring', 'rest', 'client']
+    keywords=['opsview', 'monitoring', 'rest', 'client'],
+    classifiers=[
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)'
+    ]
 )
