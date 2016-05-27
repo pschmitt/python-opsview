@@ -1,5 +1,7 @@
 # Opsview Python REST API client
 
+https://github.com/pschmitt/python-opsview
+
 ## Installation
 
 ```bash

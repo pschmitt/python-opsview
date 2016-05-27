@@ -25,8 +25,9 @@ def requirements(requirements_file='requirements.txt'):
 
 setup(
     name='opsview',
-    version='0.8',
+    version='0.8.2',
     description='Opsview REST API client',
+    long_description=read('README.md'),
     author='Philipp Schmitt',
     author_email='philipp@schmitt.co',
     url='https://github.com/pschmitt/python-opsview',
