@@ -5,6 +5,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 from getpass import getpass
 from pprint import pformat
+from functools import partial
 from requests_futures.sessions import FuturesSession
 import argparse
 import datetime
@@ -62,7 +63,6 @@ class Opsview(object):
             self.host,
             self.port
         )
-
         self.headers = {
             'X-Opsview-Username': self.username,
             'X-Opsview-Token': token,
@@ -75,14 +75,12 @@ class Opsview(object):
         self.__cache_hosts_templates_time = None
         self.use_cache = use_cache
 
-
     def api_version(self, verbose=False):
         '''
         Get information about the API
         http://docs.opsview.com/doku.php?id=opsview4.6:restapi#api_version_information
         '''
         return self.__auth_req_get(self.rest_url, verbose=verbose)
-
 
     @login_required
     def opsview_info(self, verbose=False):
@@ -92,7 +90,6 @@ class Opsview(object):
         '''
         url = '{}/{}'.format(self.rest_url, 'info')
         return self.__auth_req_get(url, verbose=verbose)
-
 
     def login(self, verbose=False):
         '''
@@ -120,7 +117,6 @@ class Opsview(object):
         self._token_age = datetime.datetime.now()
         return j['token']
 
-
     @login_required
     def logout(self, verbose=False):
         '''
@@ -132,7 +128,6 @@ class Opsview(object):
         self.headers['X-Opsview-Token'] = None
         return response
 
-
     @login_required
     def user_info(self, verbose=False):
         '''
@@ -141,7 +136,6 @@ class Opsview(object):
         '''
         url = '{}/{}'.format(self.rest_url, 'user')
         return self.__auth_req_get(url, verbose=verbose)
-
 
     @login_required
     def server_info(self, verbose=False):
@@ -166,14 +160,9 @@ class Opsview(object):
         response = self.__auth_req_get(url, params, verbose=verbose)
         return [x['name'] for x in response['list']]
 
-    @login_required
-    def fetch_page(self, func, page=1, verbose=False):
-        # TODO Implement function wrapper that will implement pagination for
-        # the decorated function
-        pass
 
     @login_required
-    def fetch_hosts_page(self, page=1, verbose=False):
+    def fetch_hosts(self, page=1, verbose=False):
         url = '{}/{}'.format(self.rest_url, 'config/host')
         params = {'page': page}
         # Omit the page attr if the first one is requested. Otherwise we won't
@@ -194,30 +183,10 @@ class Opsview(object):
             if (self.__cache_hosts_time and
                 time_diff < datetime.timedelta(minutes=CACHE_VALIDITY)):
                 return self.__cache_hosts
-        r = self.fetch_hosts_page(verbose=verbose)
-        self.__cache_hosts = r['list']
-        page = int(r['summary']['page'])
-        total_pages = int(r['summary']['totalpages'])
-        total_rows = int(r['summary']['allrows'])
-        while page < total_pages:
-            page += 1
-            logger.debug(
-                'Get all hosts - Fetch page {}/{}'.format(page, total_pages)
-            )
-            self.__cache_hosts += self.fetch_hosts_page(
-                page,
-                verbose=verbose
-            )['list']
+        f = partial(self.get, path='config/host', verbose=verbose)
+        self.__cache_hosts = self.paginated_fetch(f, verbose=verbose)
         self.__cache_hosts_time = now
-        if len(self.__cache_hosts) != total_rows:
-            logger.warning(
-                '{} hosts were retrieved but the API server explicitely stated '
-                'that there were {}'.format(
-                    len(self.__cache_hosts, total_rows)
-                )
-            )
         return self.__cache_hosts
-
 
     @login_required
     def get_all_host_templates(self, verbose=False):
@@ -228,8 +197,7 @@ class Opsview(object):
                 time_diff < datetime.timedelta(minutes=CACHE_VALIDITY)):
                 return self.__cache_host_templates
         url = '{}/{}'.format(self.rest_url, 'config/hosttemplate')
-        params = {'rows': 'all'}
-        self.__cache_hosts = self.__auth_req_get(url, params, verbose=verbose)
+        self.__cache_hosts = self.__auth_req_get(url, verbose=verbose)
         self.__cache_host_templates_time = now
         return self.__cache_host_templates
 
@@ -260,12 +228,10 @@ class Opsview(object):
         url = '{}/{}'.format(self.rest_url, 'config/host')
         return self.__auth_req_post(url, params, verbose=verbose)
 
-
     # @login_required
     # def create_host_from_template(self, hostname, template, verbose=False):
     #     url = '{}/{}'.format(self.rest_url, 'config/host')
     #     return self.__auth_req_post(url, params, verbose=verbose)
-
 
     @login_required
     def delete_host(self, host, verbose=False):
@@ -274,14 +240,12 @@ class Opsview(object):
         url = '{}/{}/{}'.format(self.rest_url, 'config/host', host['id'])
         return self.__auth_req_delete(url, verbose=verbose)
 
-
     @login_required
     def delete_hosts(self, hosts, verbose=False):
         response = []
         for h in hosts:
             response.append(self.delete_host(h, verbose))
         return response
-
 
     @login_required
     def get_hosts_by_keyword(self, keyword, verbose=False):
@@ -296,6 +260,10 @@ class Opsview(object):
                     matching_hosts.append(h)
         return matching_hosts
 
+    @login_required
+    def get_host_by_ref(self, ref, verbose=False):
+        url = '{}/{}'.format(self.rest_url,  ref.replace('/rest/', ''))
+        return self.__auth_req_get(url, verbose=verbose)
 
     @login_required
     def get_host_by_name(self, name, verbose=False):
@@ -319,9 +287,8 @@ class Opsview(object):
 
     @login_required
     def get_monitoring_servers(self, verbose=False):
-        url = '{}/{}'.format(self.rest_url, 'config/monitoringserver')
-        return self.__auth_req_get(url, verbose=verbose)
-
+        f = partial(self.get, path='config/monitoringserver', verbose=verbose)
+        return self.paginated_fetch(f, verbose=verbose)
 
     @login_required
     def reload_config(self, verbose=False):
@@ -331,72 +298,79 @@ class Opsview(object):
         url = '{}/{}'.format(self.rest_url, 'reload')
         return self.__auth_req_post(url, blocking=False, verbose=verbose)
 
+    @login_required
+    def paginated_fetch(self, func, verbose=False):
+        # TODO Implement function wrapper that will implement pagination for
+        # the decorated function
+        r = func()
+        results = r['list']
+        page = int(r['summary']['page'])
+        total_pages = int(r['summary']['totalpages'])
+        total_rows = int(r['summary']['allrows'])
+        while page < total_pages:
+            page += 1
+            logger.debug('Fetch page {}/{}'.format(page, total_pages))
+            results += func(page=page)['list']
+        if len(results) != total_rows:
+            logger.warning(
+                '{} results were retrieved but the API server explicitely stated '
+                'that there were {}'.format(len(results), total_rows)
+            )
+        return results
 
-    def __auth_req_get(self, url, params=None, verbose=False):
-        # TODO Error handling
-        logger.debug('GET {}'.format(url))
+    def get(self, path, page=1, params=None, verbose=False):
+        url = '{}/{}'.format(self.rest_url, path)
+        # Omit the page attr if the first one is requested. Otherwise we won't
+        # be able to retrieve the total number of pages
+        if params:
+            if page != 1:
+                params['page'] = page
+        else:
+            if page != 1:
+                params = {'page': page}
+        return self.__auth_req_get(
+            url,
+            params,
+            verbose=verbose
+        )
+
+
+    def update_object(self, opsview_object, verbose=False):
+        pass
+
+    def __auth_req(self, method, url, params, verbose=False):
+        logger.debug('{} {}'.format(method, url))
         logger.debug('HEADERS: {}'.format(self.headers))
         logger.debug('PARAMS: {}'.format(params))
+        # If a GET call is requested, pass the parameters in the URL
+        if method == 'GET':
+            kwargs = {'params': params}
+        else:
+            kwargs = {'json': json}
+        r = requests.request(
+            method, url, headers=self.headers,
+            verify=self.verify_ssl,
+            **kwargs
+        )
         try:
-            r = requests.get(
-                    url, headers=self.headers, params=params, verify=self.verify_ssl
-                )
             return r.json()
         except:
             logger.warning('JSON DECODE FAILED')
             print(r.content)
 
 
+    def __auth_req_get(self, url, params=None, verbose=False):
+        return self.__auth_req('GET', url, params, verbose)
+
     def __auth_req_post(self, url, params=None, blocking=True,
                         verbose=False):
-        # TODO Error handling
-        logger.debug('POST {}'.format(url))
-        logger.debug('HEADERS: {}'.format(self.headers))
-        logger.debug('PARAMS: {}'.format(params))
-
-        if blocking:
-            response = requests.post(
-                    url, headers=self.headers, json=params, verify=self.verify_ssl
-                )
-            if response.status_code > 299 or response.status_code < 200:
-                raise OpsviewApiException(
-                    'Something went wrong : {}'.format(response.json())
-                )
-            return response.json()
-        else:
-            # def post_callback(session, response):
-            #     pprint(response)
-            return FuturesSession().post(
-                url=url,
-                headers=self.headers,
-                verify=self.verify_ssl,
-                json=params,
-                timeout=None,
-                # background_callback=post_callback
-            )
-
+        return self.__auth_req('POST', url, params, verbose)
 
     def __auth_req_put(self, url, params=None, verbose=False):
-        # TODO Error handling
-        logger.debug('PUT {}'.format(url))
-        logger.debug('HEADERS: {}'.format(self.headers))
-        logger.debug('PARAMS: {}'.format(params))
-        return requests.put(url, headers=self.headers, json=params).json()
-
+        return self.__auth_req('PUT', url, params, verbose)
 
     def __auth_req_delete(self, url, params=None, verbose=False):
-        # TODO Error handling
-        logger.debug('DELETE {}'.format(url))
-        logger.debug('HEADERS: {}'.format(self.headers))
-        logger.debug('PARAMS: {}'.format(params))
-        response = requests.delete(
-                url, headers=self.headers, json=params, verify=self.verify_ssl
-            )
-        if response.status_code > 299 or response.status_code < 200:
-            raise OpsviewApiException(
-                'Something went wrong : {}'.format(response.json())
-            )
-        return response.json()
+        return self.__auth_req('DELETE', url, params, verbose)
 
 
 def get_args():
@@ -404,7 +378,7 @@ def get_args():
     Parse CLI args
     '''
     parser = argparse.ArgumentParser(description='Process args')
-    parser.add_argument(
+    parser.Add_argument(
         '-H', '--host',
         required=True,
         action='store',
