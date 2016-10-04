@@ -1,12 +1,14 @@
 #!/usr/bin/python
 # coding: utf-8
 
+
+from __future__ import unicode_literals
 from __future__ import absolute_import
 from __future__ import print_function
 from getpass import getpass
 from pprint import pformat
 from functools import partial
-from requests_futures.sessions import FuturesSession
+# from requests_futures.sessions import FuturesSession
 import argparse
 import datetime
 import json
@@ -146,12 +148,26 @@ class Opsview(object):
         url = '{}/{}'.format(self.rest_url, 'serverinfo')
         return self.__auth_req_get(url, verbose=verbose)
 
+    @login_required
+    def get_by_ref(self, ref, verbose=False):
+        url = '{}/{}'.format(self.rest_url, ref.replace('/rest/', ''))
+        return self.__auth_req_get(url, verbose=verbose)['object']
 
     @login_required
     def get_all_critical_alerts(self, verbose=False):
         url = '{}/{}'.format(self.rest_url, 'status/host')
-        return self.__auth_req_get(url, {'state': 'critical'}, verbose)
+        return self.__auth_req_get(url, {'state': 2}, verbose)
 
+    @login_required
+    def get_all_alerts(self, verbose=False):
+        params = {
+            'state': [1, 2, 3], # warning, critical, unknown
+            # 'hosts_state_type': 1,  # hard
+        }
+        f = partial(
+            self.get, path='status/service', params=params, verbose=verbose
+        )
+        return self.paginated_fetch(f, verbose=verbose)
 
     @login_required
     def get_all_keywords(self, verbose=False):
@@ -159,7 +175,6 @@ class Opsview(object):
         params = {'rows': 'all'}
         response = self.__auth_req_get(url, params, verbose=verbose)
         return [x['name'] for x in response['list']]
-
 
     @login_required
     def fetch_hosts(self, page=1, verbose=False):
@@ -187,6 +202,28 @@ class Opsview(object):
         self.__cache_hosts = self.paginated_fetch(f, verbose=verbose)
         self.__cache_hosts_time = now
         return self.__cache_hosts
+
+    @login_required
+    def get_all_host_groups(self, verbose=False):
+        f = partial(self.get, path='config/hostgroup', verbose=verbose)
+        return self.paginated_fetch(f, verbose=verbose)
+
+    @login_required
+    def get_host_group_by_name(self, name, verbose=False):
+        url = '{}/{}'.format(self.rest_url, 'config/hostgroup')
+        params = {'json_filter': json.dumps({'name': str(name)})}
+        return self.__auth_req_get(url, params, verbose=verbose)['list'][0]
+
+    @login_required
+    def get_hosts_in_group(self, group, recursive=False, verbose=False):
+        if type(group) is str or type(group) is unicode:
+            group = self.get_host_group_by_name(group)
+        hosts = []
+        hosts += group['hosts']
+        if recursive:
+            for child in group['children']:
+                hosts += self.get_hosts_in_group(child['name'], True, verbose)
+        return hosts
 
     @login_required
     def get_all_host_templates(self, verbose=False):
@@ -254,22 +291,19 @@ class Opsview(object):
         # return self.__auth_req_get(url, params, verbose)
         matching_hosts = []
         hosts = self.get_all_hosts(verbose)
-        for h in hosts['list']:
+        for h in hosts: #['list']:
             for k in h['keywords']:
                 if k['name'] == str(keyword):
                     matching_hosts.append(h)
         return matching_hosts
 
     @login_required
-    def get_host_by_ref(self, ref, verbose=False):
-        url = '{}/{}'.format(self.rest_url,  ref.replace('/rest/', ''))
-        return self.__auth_req_get(url, verbose=verbose)
-
-    @login_required
     def get_host_by_name(self, name, verbose=False):
         url = '{}/{}'.format(self.rest_url, 'config/host')
         params = {'json_filter': json.dumps({'name': str(name)})}
-        return self.__auth_req_get(url, params, verbose=verbose)
+        response = self.__auth_req_get(url, params, verbose=verbose)['list']
+        if len(response) > 0:
+            return response[0]
 
     @login_required
     def get_host_by_ip(self, ip, verbose=False):
@@ -278,6 +312,13 @@ class Opsview(object):
         response = self.__auth_req_get(url, params, verbose=verbose)['list']
         if len(response) > 0:
             return response[0]
+
+    @login_required
+    def update_host(self, host, verbose=False):
+        url = '{}/{}/{}'.format(self.rest_url, 'config/host', host['id'])
+        return self.__auth_req_put(
+            url, params=host, verbose=verbose
+        )
 
     @login_required
     def get_host_template_by_name(self, name, verbose=False):
@@ -304,6 +345,9 @@ class Opsview(object):
         # the decorated function
         r = func()
         results = r['list']
+        # Return early if there is no page attribute in the response
+        if 'page' not in r['summary']:
+            return results
         page = int(r['summary']['page'])
         total_pages = int(r['summary']['totalpages'])
         total_rows = int(r['summary']['allrows'])
@@ -328,6 +372,7 @@ class Opsview(object):
         else:
             if page != 1:
                 params = {'page': page}
+
         return self.__auth_req_get(
             url,
             params,
@@ -344,14 +389,13 @@ class Opsview(object):
         logger.debug('PARAMS: {}'.format(params))
         # If a GET call is requested, pass the parameters in the URL
         if method == 'GET':
-            kwargs = {'params': params}
+            pargs = {'params': params}
         else:
-            kwargs = {'json': json}
+            pargs = {'json': params}
         r = requests.request(
-            method, url, headers=self.headers,
-            verify=self.verify_ssl,
-            **kwargs
+            method, url, headers=self.headers, verify=self.verify_ssl, **pargs
         )
+        r.raise_for_status()
         try:
             return r.json()
         except:
