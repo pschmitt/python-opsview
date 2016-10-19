@@ -8,7 +8,6 @@ from __future__ import print_function
 from getpass import getpass
 from pprint import pformat
 from functools import partial
-# from requests_futures.sessions import FuturesSession
 import argparse
 import datetime
 import json
@@ -332,12 +331,14 @@ class Opsview(object):
         return self.paginated_fetch(f, verbose=verbose)
 
     @login_required
-    def reload_config(self, verbose=False):
+    def reload_config(self, async=True, verbose=False):
         '''
         Initiate a config reload. This may take a while on large installations.
         '''
-        url = '{}/{}'.format(self.rest_url, 'reload')
-        return self.__auth_req_post(url, blocking=False, verbose=verbose)
+        url = '{}/{}{}'.format(
+            self.rest_url, 'reload', '?asynchronous=1' if async else ''
+        )
+        return self.__auth_req_post(url, verbose=verbose)
 
     @login_required
     def paginated_fetch(self, func, verbose=False):
@@ -395,19 +396,20 @@ class Opsview(object):
         r = requests.request(
             method, url, headers=self.headers, verify=self.verify_ssl, **pargs
         )
-        r.raise_for_status()
+        if not r.ok:
+            logger.debug(r.content)
+            r.raise_for_status()
         try:
             return r.json()
         except:
             logger.warning('JSON DECODE FAILED')
-            print(r.content)
+            logger.debug(r.content)
 
 
     def __auth_req_get(self, url, params=None, verbose=False):
         return self.__auth_req('GET', url, params, verbose)
 
-    def __auth_req_post(self, url, params=None, blocking=True,
-                        verbose=False):
+    def __auth_req_post(self, url, params=None, verbose=False):
         return self.__auth_req('POST', url, params, verbose)
 
     def __auth_req_put(self, url, params=None, verbose=False):
