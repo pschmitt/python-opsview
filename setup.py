@@ -25,7 +25,7 @@ def requirements(requirements_file='requirements.txt'):
 
 setup(
     name='opsview',
-    version='0.8.6',
+    version='0.8.7',
     description='Opsview REST API client',
     license='GPLv3',
     long_description=read('README.md'),
