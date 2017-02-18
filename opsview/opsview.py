@@ -335,6 +335,10 @@ class Opsview(object):
         '''
         Initiate a config reload. This may take a while on large installations.
         '''
+        # If we're using an API version older than 4.5.0, don't use async
+        api_version = float(self.api_version()['api_version'])
+        if api_version < 4.5:
+            async = False
         url = '{}/{}{}'.format(
             self.rest_url, 'reload', '?asynchronous=1' if async else ''
         )
