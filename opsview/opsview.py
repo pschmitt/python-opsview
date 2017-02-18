@@ -18,7 +18,10 @@ import requests
 CACHE_VALIDITY = 15  # for how long cache should be active (minutes)
 TOKEN_TIMEOUT = 15  # for how long a session token should be considered active
 
-logging.basicConfig(level=logging.DEBUG)
+# Set default logging handler to avoid "No handler found" warnings.
+# This assumes Python 2.7+
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+
 logger = logging.getLogger(__name__)
 
 
@@ -482,6 +485,10 @@ def main():
     '''
     Main function
     '''
+    
+    # We should only steal the root logger if we're the application, not the module
+    logging.basicConfig(level=logging.DEBUG)
+
     args = get_args()
     if args.password:
         password = args.password
