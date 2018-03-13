@@ -1,1 +1,1 @@
-from opsview import Opsview
+from .opsview import Opsview
