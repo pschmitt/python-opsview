@@ -34,7 +34,10 @@ setup(
     url='https://github.com/pschmitt/python-opsview',
     packages=find_packages(),
     include_package_data=True,
-    install_requires=requirements(),
+    install_requires=[
+        'futures; python_version == "2.7"',
+        'requests'
+    ],
     keywords=['opsview', 'monitoring', 'rest', 'client'],
     classifiers=[
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)'
