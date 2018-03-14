@@ -24,8 +24,13 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 logger = logging.getLogger(__name__)
 
 
+class OpsviewLoginException(Exception):
+    pass
+
+
 class OpsviewApiException(Exception):
     pass
+
 
 def login_required(f):
     '''
@@ -115,7 +120,9 @@ class Opsview(object):
         logger.debug(pformat(vars(r)))
         logger.debug('JSON:')
         logger.debug(pformat(j))
-        assert 'token' in j, 'Failed to retrieve token'
+        if 'token' not in j:
+            raise OpsviewLoginException("Failed to retrieve token. "
+                                        "Please check your credentials")
         self.headers['X-Opsview-Token'] = j['token']
         self._token_age = datetime.datetime.now()
         return j['token']
@@ -162,7 +169,7 @@ class Opsview(object):
     @login_required
     def get_all_alerts(self, verbose=False):
         params = {
-            'state': [1, 2, 3], # warning, critical, unknown
+            'state': [1, 2, 3],  # warning, critical, unknown
             # 'hosts_state_type': 1,  # hard
         }
         f = partial(
@@ -217,7 +224,7 @@ class Opsview(object):
 
     @login_required
     def get_hosts_in_group(self, group, recursive=False, verbose=False):
-        if type(group) is str or type(group) is unicode:
+        if type(group) is str or type(group) is str:
             group = self.get_host_group_by_name(group)
         hosts = []
         hosts += group['hosts']
@@ -232,7 +239,7 @@ class Opsview(object):
         if self.use_cache:
             time_diff = now - self.__cache_host_templates_time
             if (self.__cache_host_templates_time and
-                time_diff < datetime.timedelta(minutes=CACHE_VALIDITY)):
+                    time_diff < datetime.timedelta(minutes=CACHE_VALIDITY)):
                 return self.__cache_host_templates
         url = '{}/{}'.format(self.rest_url, 'config/hosttemplate')
         self.__cache_hosts = self.__auth_req_get(url, verbose=verbose)
@@ -331,6 +338,12 @@ class Opsview(object):
     def get_monitoring_servers(self, verbose=False):
         f = partial(self.get, path='config/monitoringserver', verbose=verbose)
         return self.paginated_fetch(f, verbose=verbose)
+
+    @login_required
+    def get_host_status(self, hosts, verbose=False):
+        url = '{}/{}'.format(self.rest_url, 'status/service')
+        params = {'host': hosts}
+        return self.__auth_req_get(url, params, verbose=verbose)
 
     @login_required
     def reload_config(self, async=True, verbose=False):
